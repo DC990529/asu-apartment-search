@@ -64,6 +64,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <p>此頁面需要帳號密碼才能查看</p>
   <input type="text" id="usrInput" placeholder="帳號..." autofocus>
   <input type="password" id="pwInput" placeholder="密碼...">
+  <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#888;cursor:pointer;user-select:none"><input type="checkbox" id="rememberMe"> 記住帳號密碼</label>
   <button onclick="tryUnlock()">解鎖</button>
   <div class="err" id="errMsg"></div>
   <div class="hint">114 個物件 | DC & GF 專用</div>
@@ -92,9 +93,20 @@ var PWD_H="Y2QwOTMxMTUxMjAz";
 function tryUnlock(){
   var u=document.getElementById("usrInput").value;
   var p=document.getElementById("pwInput").value;
-  if(btoa(u)===USR_H && btoa(p)===PWD_H){initMap();}
+  if(btoa(u)===USR_H && btoa(p)===PWD_H){
+    if(document.getElementById("rememberMe").checked){
+      try{localStorage.setItem("asu_u",btoa(u));localStorage.setItem("asu_p",btoa(p));}catch(e){}
+    }
+    initMap();
+  }
   else{document.getElementById("errMsg").textContent="帳號或密碼錯誤";document.getElementById("pwInput").value="";document.getElementById("pwInput").focus();}
 }
+// Auto-fill if saved
+try{
+  var su=localStorage.getItem("asu_u"),sp=localStorage.getItem("asu_p");
+  if(su&&sp&&su===USR_H&&sp===PWD_H){initMap();}
+  else if(su){document.getElementById("usrInput").value=atob(su);document.getElementById("rememberMe").checked=true;}
+}catch(e){}
 document.getElementById("pwInput").addEventListener("keydown",function(e){if(e.key==="Enter")tryUnlock();});
 document.getElementById("usrInput").addEventListener("keydown",function(e){if(e.key==="Enter")document.getElementById("pwInput").focus();});
 
