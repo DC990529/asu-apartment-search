@@ -167,8 +167,8 @@ function initMap(){
     markers.forEach(function(m){
       var p=m.pd,show=!!confs[p.conf];
       var p1=Math.min(pp(p.studio),pp(p.b1)),p2=pp(p.b2);
-      if(mx1<2500)show=show&&p1<=mx1;
-      if(mx2<3000)show=show&&p2<=mx2;
+      if(mx1<2500)show=show&&(p1<=mx1||p1>=99000);
+      if(mx2<3000)show=show&&(p2<=mx2||p2>=99000);
       if(ms>0)show=show&&p.rating>=ms;
       if(ff)show=show&&p.furn&&(p.furn==="Yes"||p.furn.indexOf("Yes")>=0||p.furn.indexOf("有")>=0);
       if(fw)show=show&&p.wifi&&(p.wifi.indexOf("含")>=0||p.wifi.indexOf("WiFi")>=0||p.wifi.indexOf("全含")>=0);
