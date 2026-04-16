@@ -114,7 +114,7 @@ function initMap(){
   var legend=L.control({position:"bottomright"});
   legend.onAdd=function(){var d=L.DomUtil.create("div","legend");d.innerHTML="<h4>圖例</h4><div><span class='ld' style='background:#4caf50'></span>Triple verified</div><div><span class='ld' style='background:#ff9800'></span>Double verified</div><div style='margin-top:4px;font-size:11px;color:#999'>Total: "+D.length+" verified<br>Default: 4star + $1,100</div>";return d;};
   legend.addTo(map);
-  function pp(s){if(!s||s==="N/A"||s==="需問"||s.indexOf("N/A")>=0)return 99999;var m=s.match(/[\d,]+/);return m?parseFloat(m[0].replace(",","")):99999;}
+  function pp(s){if(!s||s==="N/A"||s==="Ask"||s.indexOf("N/A")>=0||s.indexOf("Ask")>=0)return -1;var m=s.match(/[\d,]+/);return m?parseFloat(m[0].replace(",","")):-1;}
   window._openSB=function(id){
     var p=D.find(function(x){return x.id===id;});if(!p)return;
     var bOk=Math.min(pp(p.studio),pp(p.b1))<=1100;
@@ -167,8 +167,8 @@ function initMap(){
     markers.forEach(function(m){
       var p=m.pd,show=!!confs[p.conf];
       var p1=Math.min(pp(p.studio),pp(p.b1)),p2=pp(p.b2);
-      if(mx1<2500)show=show&&(p1<=mx1||p1>=99000);
-      if(mx2<3000)show=show&&(p2<=mx2||p2>=99000);
+      if(mx1<2500)show=show&&(p1<=mx1||p1<0);
+      if(mx2<3000)show=show&&(p2<=mx2||p2<0);
       if(ms>0)show=show&&p.rating>=ms;
       if(ff)show=show&&p.furn&&(p.furn==="Yes"||p.furn.indexOf("Yes")>=0||p.furn.indexOf("有")>=0);
       if(fw)show=show&&p.wifi&&(p.wifi.indexOf("含")>=0||p.wifi.indexOf("WiFi")>=0||p.wifi.indexOf("全含")>=0);
