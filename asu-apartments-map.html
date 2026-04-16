@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASU Tempe 租屋地圖 v2 — DC & GF</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; }
+  #map { width: 100%; height: 100vh; }
+
+  /* Marker styles */
+  .marker-icon {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; border-radius: 50%; width: 32px; height: 32px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35); border: 2.5px solid white;
+    transition: transform 0.2s;
+  }
+  .marker-icon:hover { transform: scale(1.3); }
+  .conf-high { background: #4caf50; }
+  .conf-mid { background: #ff9800; }
+  .conf-low { background: #f44336; }
+
+  /* Apollo special marker */
+  .marker-apollo {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; border-radius: 50%; width: 44px; height: 44px;
+    box-shadow: 0 0 0 4px rgba(255,215,0,0.5), 0 4px 12px rgba(0,0,0,0.4);
+    border: 3px solid #ffd700; background: #4caf50;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 4px rgba(255,215,0,0.5), 0 4px 12px rgba(0,0,0,0.4); }
+    50% { box-shadow: 0 0 0 10px rgba(255,215,0,0.2), 0 4px 12px rgba(0,0,0,0.4); }
+    100% { box-shadow: 0 0 0 4px rgba(255,215,0,0.5), 0 4px 12px rgba(0,0,0,0.4); }
+  }
+
+  /* Legend */
+  .legend {
+    background: rgba(255,255,255,0.95); padding: 14px 18px; border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15); line-height: 2; font-size: 13px;
+    backdrop-filter: blur(8px);
+  }
+  .legend h4 { margin-bottom: 6px; font-size: 15px; font-weight: 700; }
+  .legend-section { margin-bottom: 6px; }
+  .legend-section-title { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+
+  /* Filter bar */
+  .filter-bar {
+    position: fixed; top: 12px; left: 60px; z-index: 1000;
+    background: rgba(255,255,255,0.95); border-radius: 12px; padding: 10px 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    backdrop-filter: blur(8px);
+  }
+  .filter-bar label { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px; user-select: none; }
+  .filter-bar .divider { width: 1px; height: 20px; background: #ddd; }
+
+  /* Search */
+  .search-box {
+    position: fixed; top: 12px; right: 12px; z-index: 1000;
+    background: rgba(255,255,255,0.95); border-radius: 12px; padding: 8px 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); backdrop-filter: blur(8px);
+  }
+  .search-box input { border: 1px solid #e0e0e0; padding: 8px 12px; border-radius: 8px; width: 200px; font-size: 13px; outline: none; }
+  .search-box input:focus { border-color: #4caf50; box-shadow: 0 0 0 2px rgba(76,175,80,0.2); }
+
+  /* Sidebar */
+  .sidebar {
+    position: fixed; top: 0; right: -440px; width: 440px; height: 100vh;
+    background: white; box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+    overflow-y: auto; transition: right 0.3s cubic-bezier(0.4,0,0.2,1); z-index: 1001; padding: 24px;
+  }
+  .sidebar.open { right: 0; }
+  .sidebar-close { position: absolute; top: 14px; right: 18px; font-size: 26px; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; }
+  .sidebar-close:hover { color: #333; }
+  .sidebar h2 { font-size: 22px; margin-bottom: 4px; padding-right: 40px; line-height: 1.3; }
+  .sidebar .address { color: #888; font-size: 14px; margin-bottom: 16px; }
+  .sidebar .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+  .sidebar .info-card { background: #f8f9fa; padding: 12px; border-radius: 10px; }
+  .sidebar .info-card .label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sidebar .info-card .value { font-size: 15px; font-weight: 600; margin-top: 3px; }
+  .sidebar .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .sidebar .tag { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .tag-green { background: #e8f5e9; color: #2e7d32; }
+  .tag-blue { background: #e3f2fd; color: #1565c0; }
+  .tag-orange { background: #fff3e0; color: #e65100; }
+  .tag-red { background: #ffebee; color: #c62828; }
+  .tag-purple { background: #f3e5f5; color: #6a1b9a; }
+  .tag-gold { background: #fff8e1; color: #f57f17; border: 1px solid #ffd54f; }
+  .sidebar .actions { display: flex; flex-direction: column; gap: 10px; }
+  .sidebar .btn { display: block; padding: 13px; border-radius: 10px; text-align: center; text-decoration: none; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: #1976d2; color: white; }
+  .btn-call { background: #2e7d32; color: white; }
+  .btn-secondary { background: #f5f5f5; color: #333; border: 1px solid #e0e0e0; }
+  .sidebar .note { margin-top: 14px; padding: 12px; background: #fffde7; border-radius: 10px; font-size: 13px; color: #666; line-height: 1.5; }
+  .sidebar .conf-badge { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .conf-badge.high { background: #e8f5e9; color: #2e7d32; }
+  .conf-badge.mid { background: #fff3e0; color: #e65100; }
+  .conf-badge.low { background: #ffebee; color: #c62828; }
+
+  /* Popup */
+  .leaflet-popup-content { margin: 10px 14px; min-width: 220px; }
+  .popup-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .popup-price { color: #2e7d32; font-weight: 600; font-size: 14px; }
+  .popup-detail { font-size: 12px; color: #666; margin-top: 4px; line-height: 1.6; }
+  .popup-btn { display: inline-block; margin-top: 8px; padding: 6px 16px; background: #1976d2; color: white; border-radius: 6px; text-decoration: none; font-size: 12px; cursor: pointer; border: none; font-weight: 600; }
+  .popup-btn:hover { background: #1565c0; }
+
+  @media (max-width: 768px) {
+    .sidebar { width: 100%; right: -100%; }
+    .filter-bar { left: 10px; right: 10px; top: auto; bottom: 10px; justify-content: center; font-size: 12px; }
+    .search-box { top: 10px; right: 10px; left: 60px; }
+    .search-box input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="filter-bar">
+  <label><input type="checkbox" checked data-cat="student"> 🎓 學生</label>
+  <label><input type="checkbox" checked data-cat="general"> 🏢 一般</label>
+  <label><input type="checkbox" checked data-cat="furnished"> 🛋️ 短租</label>
+  <label><input type="checkbox" checked data-cat="platform"> 📱 平台</label>
+  <span class="divider"></span>
+  <label><input type="checkbox" checked data-conf="high"> 🟢 高可信</label>
+  <label><input type="checkbox" checked data-conf="mid"> 🟡 中可信</label>
+  <label><input type="checkbox" checked data-conf="low"> 🔴 低可信</label>
+  <span class="divider"></span>
+  <label><input type="checkbox" id="filter-budget"> 💰 $1,400 以下</label>
+</div>
+
+<div class="search-box">
+  <input type="text" id="search" placeholder="🔍 搜尋物件名稱...">
+</div>
+
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
+  <div id="sidebar-content"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ASU_CENTER = [33.4242, -111.9281];
+const map = L.map('map', { zoomControl: true }).setView(ASU_CENTER, 15);
+
+// CartoDB Positron - modern clean style
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 19
+}).addTo(map);
+
+// ASU campus marker
+L.marker(ASU_CENTER, {
+  icon: L.divIcon({
+    className: '',
+    html: '<div style="background:#8c1d40;color:white;padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;white-space:nowrap;box-shadow:0 3px 8px rgba(0,0,0,0.3);letter-spacing:0.5px;">🏫 ASU Tempe Campus</div>',
+    iconSize: [160, 28], iconAnchor: [80, 14]
+  })
+}).addTo(map);
+
+const EMOJIS = { student:'🎓', general:'🏢', furnished:'🛋️', platform:'📱' };
+const CONF_CLASS = { high:'conf-high', mid:'conf-mid', low:'conf-low' };
+const CONF_LABEL = { high:'🟢 高可信（多來源確認）', mid:'🟡 中可信（搜尋引擎摘要）', low:'🔴 低可信（需自行驗證）' };
+
+function makeIcon(cat, conf, isApollo) {
+  if (isApollo) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="marker-apollo" title="Apollo Tempe ⭐">⭐</div>`,
+      iconSize: [44, 44], iconAnchor: [22, 22]
+    });
+  }
+  return L.divIcon({
+    className: '',
+    html: `<div class="marker-icon ${CONF_CLASS[conf]}">${EMOJIS[cat]}</div>`,
+    iconSize: [32, 32], iconAnchor: [16, 16]
+  });
+}
+
+const properties = [
+  // STUDENT - HIGH confidence
+  {id:1, name:"Apollo Tempe", lat:33.4148590, lng:-111.9226640, addr:"1100 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"high", apollo:true,
+   price:"$999+/人", priceNum:999, phone:"(480) 401-1240", web:"https://www.apollotempe.com/",
+   types:"1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"DC 指定研究；Per-bed pricing；1B1B 整間約 $1,779"},
+  {id:9, name:"University House Tempe", lat:33.4248571, lng:-111.9344381, addr:"323 E Veterans Way, Tempe, AZ 85281", cat:"student", conf:"high",
+   price:"$875–$1,849/人", priceNum:875, phone:"(928) 706-9518", web:"https://uhtempe.com/",
+   types:"Studio/1B/2B", furnished:true, parking:true, shortTerm:"✅ Jan/May/mid-month 入住可", promo:"",
+   note:"Parking $125/mo；2B1B from $875/人；確認多時段入住"},
+  {id:14, name:"Rambler Tempe", lat:33.4148590, lng:-111.9236910, addr:"1020 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"high",
+   price:"$1,249+ (4B)", priceNum:1249, phone:"(480) 401-1240", web:"https://ramblertempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"✅ Semester lease +$100/mo", promo:"確認短租可",
+   note:"2026新開幕；15層；Fall/Spring 短租確認"},
+  {id:15, name:"Alight Tempe", lat:33.4148580, lng:-111.9043170, addr:"1900 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"high",
+   price:"$655+/人 (shared)", priceNum:655, phone:"(620) 591-4864", web:"https://alight-tempe.com/",
+   types:"2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"含水電網路",
+   note:"無Studio/1B；含 unlimited utilities"},
+  {id:16, name:"Yugo Tempe", lat:33.4146950, lng:-111.9222270, addr:"1111 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"high",
+   price:"$429+/人 (shared)", priceNum:429, phone:"(623) 400-1218", web:"https://yugo.com/en-us/global/united-states-of-america/tempe-az",
+   types:"2B/2B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"Shared $429；Private $729"},
+  {id:21, name:"Vista del Sol (ASU)", lat:33.4146706, lng:-111.9285007, addr:"701 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"high",
+   price:"$478+/人", priceNum:478, phone:"(480) 449-3765", web:"https://www.americancampus.com/student-apartments/az/tempe/vista-del-sol",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"Academic year", promo:"",
+   note:"American Campus Communities 管理"},
+
+  // STUDENT - MID confidence
+  {id:2, name:"Canvas Tempe", lat:33.4184860, lng:-111.9224622, addr:"1028 E Orange St, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$999–$2,199/人", priceNum:999, phone:"(602) 903-7042", web:"https://www.canvastempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"2026-2027 年度價格"},
+  {id:3, name:"District on Apache", lat:33.4137951, lng:-111.9242833, addr:"977 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$979+", priceNum:979, phone:"(480) 968-2420", web:"https://www.thedistrictonapache.com/",
+   types:"1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"Parking $110/mo 額外"},
+  {id:4, name:"The Carmin", lat:33.4153067, lng:-111.9239808, addr:"1000 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$1,149+ (促銷)", priceNum:1149, phone:"(928) 842-8453", web:"https://www.livecarmin.com/",
+   types:"Studio/1B/2B/4B", furnished:true, parking:false, shortTerm:"詢問", promo:"前50名簽約 $1,149起",
+   note:"2B2B from $1,379"},
+  {id:5, name:"Union Tempe", lat:33.4225226, lng:-111.9371485, addr:"712 S Forest Ave, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"Studio $1,250–$1,450", priceNum:1250, phone:"(602) 755-8865", web:"https://www.uniontempe.com/",
+   types:"Studio/1B/2B/3B/4B/5B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"Studio 不含家具；3B+ 有家具"},
+  {id:6, name:"Nine20 Tempe", lat:33.4190571, lng:-111.9241347, addr:"920 S Terrace Rd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$949–$1,975/人", priceNum:949, phone:"(928) 492-5255", web:"https://nine20tempe.com/",
+   types:"Studio/1B/2B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"Flash sale $949",
+   note:"含水費；6層停車場"},
+  {id:7, name:"Vertex Tempe", lat:33.4169585, lng:-111.9236621, addr:"1050 S Terrace Rd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$902–$970/人", priceNum:902, phone:"(480) 612-9276", web:"https://vertexapts.com/",
+   types:"1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"含50吋TV；歷史價格需確認"},
+  {id:8, name:"VERVE Tempe", lat:33.4172056, lng:-111.9227656, addr:"1047 S Terrace Rd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$1,299–$2,175/人", priceNum:1299, phone:"(602) 814-0119", web:"https://vervetempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"2026全新開幕"},
+  {id:10, name:"SoL Tempe", lat:33.4213368, lng:-111.9033673, addr:"1949 E University Dr, Tempe, AZ 85288", cat:"student", conf:"mid",
+   price:"$910–$1,375", priceNum:910, phone:"(520) 677-3126", web:"https://livesolasu.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"All-inclusive 含水電網路"},
+  {id:11, name:"oLiv Tempe", lat:33.4228111, lng:-111.9383756, addr:"704 S Myrtle Ave, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$1,150–$1,980/人", priceNum:1150, phone:"(623) 253-7901", web:"https://olivtempe.com/",
+   types:"Studio/1B", furnished:true, parking:true, shortTerm:"詢問", promo:"$50-$200/mo off",
+   note:"2020年建成"},
+  {id:12, name:"Atmosphere Tempe", lat:33.4228510, lng:-111.9363154, addr:"707 S Forest Ave, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$979+ (促銷)", priceNum:979, phone:"(928) 764-8274", web:"https://www.atmospheretempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"最多2個月免費",
+   note:"Rooftop pool；structured parking"},
+  {id:13, name:"Flare Tempe", lat:33.4143821, lng:-111.9203255, addr:"1317 S Terrace Rd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$899+ (4B4B)", priceNum:899, phone:"(928) 593-4980", web:"https://flaretempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"Fall 2026", promo:"$110 off/月",
+   note:"原 Park Place"},
+  {id:17, name:"Redpoint Tempe", lat:33.4234386, lng:-111.9663718, addr:"708 S Lindon Ln, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$685+/人", priceNum:685, phone:"(928) 564-6586", web:"https://redpoint-tempe.com/",
+   types:"3B/4B/5B townhouse", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"Cottage/Townhouse；無Studio/1B"},
+  {id:18, name:"Lofts on 8th", lat:33.4193841, lng:-111.9145070, addr:"1403 E 8th St, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$899–$1,149/人", priceNum:899, phone:"透過網站", web:"https://www.loftson8th.com/",
+   types:"4B townhouse", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"4B4.5B townhouse only"},
+  {id:19, name:"922 Place (ASU)", lat:33.4152720, lng:-111.9251957, addr:"922 E Apache Blvd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$989+", priceNum:989, phone:"(480) 966-3669", web:"https://housing.asu.edu/housing-communities/residential-colleges/922-place",
+   types:"Studio/1B/2B/3B/4B/5B", furnished:true, parking:true, shortTerm:"Academic year", promo:"",
+   note:"ASU 直營 master lease"},
+  {id:22, name:"The Marshall Tempe", lat:33.4146950, lng:-111.9232721, addr:"1057 E Apache Rd, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"$1,390–$2,000/人", priceNum:1390, phone:"透過網站", web:"https://livemarshalltempe.com/",
+   types:"Studio/1B/2B/3B/4B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:""},
+  {id:23, name:"Array on Apache", lat:33.4148590, lng:-111.9226640, addr:"1100 E Apache Blvd Bldg A, Tempe, AZ 85281", cat:"student", conf:"mid",
+   price:"Studio $1,344–$1,395", priceNum:1344, phone:"(833) 692-0696", web:"https://www.arrayonapache.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"與 Apollo 同棟"},
+
+  // STUDENT - LOW confidence
+  {id:20, name:"The Mark Tempe", lat:33.4162712, lng:-111.9213022, addr:"1115 E Lemon St, Tempe, AZ 85281", cat:"student", conf:"low",
+   price:"詢問", priceNum:1400, phone:"(480) 968-2555", web:"https://offcampushousing.asu.edu/",
+   types:"Studio/1B/2B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"價格未確認"},
+
+  // GENERAL - HIGH confidence
+  {id:25, name:"Paseo on University", lat:33.4219483, lng:-111.9196569, addr:"1255 E University Dr, Tempe, AZ 85281", cat:"general", conf:"high",
+   price:"Studio $1,073；1B $1,033；2B $1,310", priceNum:1033, phone:"(623) 920-0766", web:"https://www.paseoonuniversity.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"Covered parking $30/mo",
+   note:"三個泳池；距 Mill Ave 1 英里；多平台交叉確認"},
+  {id:24, name:"Butterfield Park", lat:33.4163155, lng:-111.9176108, addr:"1215 S Dorsey Ln, Tempe, AZ 85281", cat:"general", conf:"high",
+   price:"1B $999+；2B $1,149+", priceNum:999, phone:"(855) 727-0620", web:"https://www.butterfieldparkapts.com/",
+   types:"1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"含水費/垃圾費",
+   note:"DC 指定研究；Office Mon-Fri 8AM-4PM"},
+  {id:26, name:"University Pointe", lat:33.4167380, lng:-111.9252540, addr:"919 E Lemon St, Tempe, AZ 85281", cat:"general", conf:"high",
+   price:"$775–$1,399", priceNum:775, phone:"(480) 966-9000", web:"https://www.universitypointe.com/",
+   types:"Studio/1B/2B", furnished:true, parking:true, shortTerm:"詢問", promo:"",
+   note:"337-690 sqft；有 furnished 選項"},
+
+  // GENERAL - MID confidence
+  {id:27, name:"Emerson Square", lat:33.4194446, lng:-111.9111051, addr:"1701 E 8th St, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$975+", priceNum:975, phone:"(480) 966-4655", web:"https://www.liveatemersonsquare.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"🔥 2個月免費",
+   note:"促銷很划算"},
+  {id:28, name:"Sono Tempe", lat:33.3871633, lng:-111.9395894, addr:"4130 S Mill Ave, Tempe, AZ 85282", cat:"general", conf:"mid",
+   price:"Studio $854+", priceNum:854, phone:"(602) 654-0437", web:"https://www.sonotempe.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"✅ 3-14個月租期", promo:"",
+   note:"🔥 3個月起租！距ASU稍遠（2mi south）"},
+  {id:29, name:"Aces on Apache", lat:33.4148539, lng:-111.9118749, addr:"1620 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,100+", priceNum:1100, phone:"(620) 302-9542", web:"https://www.acesapache.com/",
+   types:"Studio/1B bungalows", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"32戶小社區 + 15 bungalows"},
+  {id:30, name:"Murietta at ASU", lat:33.4092058, lng:-111.9177998, addr:"1717 S Dorsey Ln, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,175–$2,035", priceNum:1175, phone:"(520) 482-3706", web:"https://www.muriettaapartments.com/",
+   types:"1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"Butterfield Park 隔壁"},
+  {id:31, name:"The Access", lat:33.4146888, lng:-111.9083295, addr:"1811 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,170+", priceNum:1170, phone:"(520) 412-6120", web:"https://www.liveattheaccess.com/",
+   types:"Studio/1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"485-1199 sqft"},
+  {id:32, name:"Broadstone Tempe Station", lat:33.4148710, lng:-111.8901665, addr:"2323 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,165+", priceNum:1165, phone:"(480) 659-2600", web:"https://www.livebroadstonetempestation.com/",
+   types:"1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"🔥 1個月免費",
+   note:"854-1440 sqft"},
+  {id:33, name:"Vela at Tempe Town Lake", lat:33.4338307, lng:-111.9304763, addr:"555 N College Ave, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"Studio $1,288+", priceNum:1288, phone:"(480) 967-0083", web:"https://www.velaapartments.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"Tempe Town Lake 旁"},
+  {id:34, name:"Vero Tempe", lat:33.4245010, lng:-111.9277400, addr:"651 E 6th St, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,452+", priceNum:1452, phone:"(855) 289-7423", web:"https://verotempe.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"略超預算"},
+  {id:35, name:"Metro 101", lat:33.4147149, lng:-111.8922141, addr:"2157 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,294+", priceNum:1294, phone:"(480) 625-3101", web:"https://www.livemetro101.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"522-1328 sqft"},
+  {id:36, name:"Agave", lat:33.4098720, lng:-111.9236375, addr:"1718 S Jentilly Ln, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,269+", priceNum:1269, phone:"(844) 312-6267", web:"https://www.agaveapt.com/",
+   types:"1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"Orbit bus line 上"},
+  {id:37, name:"Retreat at Rio Salado", lat:33.4293028, lng:-111.9045132, addr:"2325 E Rio Salado Pkwy, Tempe, AZ 85288", cat:"general", conf:"mid",
+   price:"$1,400+", priceNum:1400, phone:"(480) 717-4360", web:"https://www.decron.com/apartments/az/tempe/the-retreat-at-rio-salado/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"邊界值"},
+  {id:38, name:"The Local by Mark-Taylor", lat:33.4227512, lng:-111.9433765, addr:"750 S Ash Ave, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,599+", priceNum:1599, phone:"(480) 900-4495", web:"https://www.mark-taylor.com/apartments/az/tempe/the-local/",
+   types:"Studio/1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"🔥 12 weeks free",
+   note:"促銷後可能在預算內；Whole Foods 樓下"},
+  {id:42, name:"Vue Nineteen 01", lat:33.4148580, lng:-111.9043077, addr:"1901 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$998–$1,190 (含水電!)", priceNum:998, phone:"(480) 894-2946", web:"https://www.vuenineteen01.com/",
+   types:"1B1B", furnished:false, parking:true, shortTerm:"詢問", promo:"含水電費",
+   note:"🔥 含水電的 1B1B 超值"},
+  {id:43, name:"Onnix Apartments", lat:33.4075930, lng:-111.9140960, addr:"1500 E Broadway Rd, Tempe, AZ 85282", cat:"general", conf:"mid",
+   price:"Studio $1,083+", priceNum:1083, phone:"(480) 637-5643", web:"https://www.onnixtempe.com/",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:""},
+  {id:39, name:"Avana Tempe", lat:33.3833637, lng:-111.9398348, addr:"30 W Carter Dr, Tempe, AZ 85282", cat:"general", conf:"mid",
+   price:"Studio $944+", priceNum:944, phone:"(623) 244-6549", web:"搜尋 Apartments.com",
+   types:"Studio/1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"距 ASU 稍遠"},
+  {id:41, name:"Skye at McClintock Station", lat:33.4133393, lng:-111.9069500, addr:"1831 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"mid",
+   price:"$1,301+", priceNum:1301, phone:"(480) 306-7622", web:"https://www.skyeatmcclintockstation.com/",
+   types:"Studio/1B/2B/3B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"有 EV charging"},
+
+  // GENERAL - LOW confidence
+  {id:40, name:"La Paloma", lat:33.4148620, lng:-111.9014150, addr:"1962 E Apache Blvd, Tempe, AZ 85281", cat:"general", conf:"low",
+   price:"詢問", priceNum:1400, phone:"(480) 546-5519", web:"搜尋 Apartments.com",
+   types:"Studio/1B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"價格未確認"},
+  {id:44, name:"Tempe Park Place", lat:33.3932271, lng:-111.9263309, addr:"4540 S Rural Rd, Tempe, AZ 85282", cat:"general", conf:"low",
+   price:"詢問", priceNum:1200, phone:"詢問", web:"搜尋 Apartments.com",
+   types:"1B/2B", furnished:false, parking:true, shortTerm:"詢問", promo:"",
+   note:"傳統社區；價格未確認"},
+
+  // FURNISHED - LOW confidence (training data)
+  {id:45, name:"InTown Suites (Tempe)", lat:33.4074061, lng:-111.9400047, addr:"1720 W Broadway Rd, Tempe, AZ 85282", cat:"furnished", conf:"low",
+   price:"~$1,200–$1,600/月", priceNum:1200, phone:"(480) 839-0022", web:"https://www.intownsuites.com/",
+   types:"Studio/efficiency", furnished:true, parking:true, shortTerm:"✅ 週租制", promo:"",
+   note:"訓練資料，需自行驗證價格"},
+  {id:46, name:"Extended Stay America", lat:33.3869383, lng:-111.9784503, addr:"4245 S 48th St, Phoenix, AZ 85040", cat:"furnished", conf:"low",
+   price:"月租需洽談", priceNum:1500, phone:"(480) 753-7474", web:"https://www.extendedstayamerica.com/",
+   types:"Studio suites", furnished:true, parking:true, shortTerm:"✅ 彈性", promo:"5+月折扣",
+   note:"訓練資料；靠近 Tempe 邊界"},
+  {id:47, name:"Residence Inn Marriott", lat:33.4253101, lng:-111.9367534, addr:"510 S Forest Ave, Tempe, AZ 85281", cat:"furnished", conf:"low",
+   price:"長住折扣需洽談", priceNum:2000, phone:"(480) 967-2001", web:"https://www.marriott.com/",
+   types:"Studio/1B suites", furnished:true, parking:true, shortTerm:"✅ 彈性", promo:"",
+   note:"訓練資料；可能超預算但含 housekeeping"},
+
+  // PLATFORM
+  {id:48, name:"FurnishedFinder.com", lat:33.4244, lng:-111.9220, addr:"平台 — Tempe 多物件", cat:"platform", conf:"high",
+   price:"多種價位", priceNum:1400, phone:"—", web:"https://www.furnishedfinder.com/housing/Tempe-Arizona",
+   types:"多種", furnished:true, parking:true, shortTerm:"✅", promo:"",
+   note:"Furnished 短租專門平台"},
+  {id:49, name:"CHBO Corp Housing", lat:33.4244, lng:-111.9240, addr:"平台 — 業主直租", cat:"platform", conf:"high",
+   price:"多種價位", priceNum:1400, phone:"—", web:"https://www.corporatehousingbyowner.com/furnished-apartments/tempe-az",
+   types:"1B/2B", furnished:true, parking:true, shortTerm:"✅ 30天起", promo:"",
+   note:"業主直租"},
+  {id:50, name:"HouseStay", lat:33.4244, lng:-111.9260, addr:"平台 — 95個物件", cat:"platform", conf:"high",
+   price:"多種價位", priceNum:1400, phone:"—", web:"https://www.housestay.com/rent/furnished-monthly-rentals-in-tempe-az/",
+   types:"多種", furnished:true, parking:true, shortTerm:"✅ 月租", promo:"",
+   note:"含水電"},
+  {id:51, name:"ASU Off-Campus Housing", lat:33.4244, lng:-111.9280, addr:"ASU 官方平台", cat:"platform", conf:"high",
+   price:"多種價位", priceNum:1400, phone:"—", web:"https://offcampushousing.asu.edu/listing",
+   types:"多種", furnished:true, parking:true, shortTerm:"✅", promo:"",
+   note:"ASU 認證"},
+  {id:52, name:"Blueground", lat:33.4244, lng:-111.9300, addr:"平台 — furnished 彈性租", cat:"platform", conf:"high",
+   price:"多種價位", priceNum:1400, phone:"—", web:"https://www.theblueground.com/m/furnished-apartments/tempe-az-usa",
+   types:"多種", furnished:true, parking:true, shortTerm:"✅ 彈性", promo:"",
+   note:"全球 furnished 品牌"},
+];
+
+const allMarkers = [];
+
+properties.forEach(p => {
+  const icon = makeIcon(p.cat, p.conf, p.apollo);
+  const marker = L.marker([p.lat, p.lng], { icon, zIndexOffset: p.apollo ? 1000 : 0 })
+    .bindPopup(`
+      <div class="popup-title">${p.apollo ? '⭐ ' : ''}${p.name}</div>
+      <div class="popup-price">${p.price}</div>
+      <div class="popup-detail">
+        ${EMOJIS[p.cat]} ${p.types}<br>
+        ${p.furnished ? '✅ Furnished' : '🪑 無家具'} | ${p.parking ? '🅿️ 有停車' : '🅿️ 無'}
+      </div>
+      <button class="popup-btn" onclick="openSidebar(${p.id})">查看詳情</button>
+    `);
+  marker.propertyData = p;
+  allMarkers.push(marker);
+  marker.addTo(map);
+});
+
+// Legend
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = function() {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML = `
+    <h4>圖例</h4>
+    <div class="legend-section">
+      <div class="legend-section-title">物件類型（Emoji）</div>
+      <div class="legend-item">🎓 學生公寓</div>
+      <div class="legend-item">🏢 一般公寓</div>
+      <div class="legend-item">🛋️ 短租/Furnished</div>
+      <div class="legend-item">📱 搜尋平台</div>
+      <div class="legend-item">⭐ Apollo（DC 指定）</div>
+    </div>
+    <div class="legend-section">
+      <div class="legend-section-title">可信度（背景色）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#4caf50"></span> 高（多來源確認）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#ff9800"></span> 中（搜尋引擎摘要）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#f44336"></span> 低（需自行驗證）</div>
+    </div>
+  `;
+  return div;
+};
+legend.addTo(map);
+
+// Sidebar
+const CAT_LABELS = { student:'🎓 學生公寓', general:'🏢 一般公寓', furnished:'🛋️ 短租/Furnished', platform:'📱 搜尋平台' };
+
+function openSidebar(id) {
+  const p = properties.find(x => x.id === id);
+  if (!p) return;
+  const budgetTag = p.priceNum <= 1400 ? '<span class="tag tag-green">💰 預算內</span>' : '<span class="tag tag-red">💰 超預算</span>';
+  const furnTag = p.furnished ? '<span class="tag tag-blue">🛋️ Furnished</span>' : '<span class="tag tag-orange">🪑 無家具</span>';
+  const parkTag = p.parking ? '<span class="tag tag-blue">🅿️ 有停車</span>' : '';
+  const shortTag = p.shortTerm.includes('✅') ? '<span class="tag tag-green">📅 短租確認</span>' : '<span class="tag tag-purple">📅 需詢問短租</span>';
+  const promoTag = p.promo ? `<span class="tag tag-gold">🎁 ${p.promo}</span>` : '';
+  const apolloTag = p.apollo ? '<span class="tag tag-gold">⭐ DC 指定研究</span>' : '';
+  const confBadgeClass = p.conf === 'high' ? 'high' : p.conf === 'mid' ? 'mid' : 'low';
+
+  document.getElementById('sidebar-content').innerHTML = `
+    <h2>${p.apollo ? '⭐ ' : ''}${p.name}</h2>
+    <div class="address">${p.addr}</div>
+    <div class="tags">${apolloTag}${budgetTag}${furnTag}${parkTag}${shortTag}${promoTag}</div>
+    <div class="info-grid">
+      <div class="info-card"><div class="label">月租金</div><div class="value">${p.price}</div></div>
+      <div class="info-card"><div class="label">房型</div><div class="value">${p.types}</div></div>
+      <div class="info-card"><div class="label">短租</div><div class="value">${p.shortTerm}</div></div>
+      <div class="info-card"><div class="label">類型</div><div class="value">${CAT_LABELS[p.cat]}</div></div>
+    </div>
+    <div class="actions">
+      ${p.web.startsWith('http') ? `<a href="${p.web}" target="_blank" class="btn btn-primary">🌐 查看官網</a>` : `<div class="btn btn-secondary">🌐 ${p.web}</div>`}
+      ${p.phone !== '—' && p.phone !== '透過網站' && p.phone !== '詢問' ? `<a href="tel:${p.phone.replace(/[^0-9+]/g,'')}" class="btn btn-call">📞 ${p.phone}</a>` : ''}
+      <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.addr)}" target="_blank" class="btn btn-secondary">🗺️ Google Maps</a>
+    </div>
+    ${p.note ? `<div class="note">📝 ${p.note}</div>` : ''}
+    <div class="conf-badge ${confBadgeClass}">${CONF_LABEL[p.conf]}</div>
+  `;
+  document.getElementById('sidebar').classList.add('open');
+  map.closePopup();
+}
+
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+
+// Filters
+document.querySelectorAll('.filter-bar input[data-cat]').forEach(cb => cb.addEventListener('change', applyFilters));
+document.querySelectorAll('.filter-bar input[data-conf]').forEach(cb => cb.addEventListener('change', applyFilters));
+document.getElementById('filter-budget').addEventListener('change', applyFilters);
+document.getElementById('search').addEventListener('input', applyFilters);
+
+function applyFilters() {
+  const activeCats = new Set();
+  document.querySelectorAll('.filter-bar input[data-cat]:checked').forEach(cb => activeCats.add(cb.dataset.cat));
+  const activeConfs = new Set();
+  document.querySelectorAll('.filter-bar input[data-conf]:checked').forEach(cb => activeConfs.add(cb.dataset.conf));
+  const budgetOnly = document.getElementById('filter-budget').checked;
+  const searchTerm = document.getElementById('search').value.toLowerCase();
+
+  allMarkers.forEach(m => {
+    const p = m.propertyData;
+    const show = activeCats.has(p.cat) && activeConfs.has(p.conf)
+      && (!budgetOnly || p.priceNum <= 1400)
+      && (!searchTerm || p.name.toLowerCase().includes(searchTerm) || p.addr.toLowerCase().includes(searchTerm));
+    if (show && !map.hasLayer(m)) map.addLayer(m);
+    if (!show && map.hasLayer(m)) map.removeLayer(m);
+  });
+}
+
+map.on('click', closeSidebar);
+</script>
+</body>
+</html>
